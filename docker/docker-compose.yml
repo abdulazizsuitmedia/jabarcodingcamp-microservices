@@ -1,0 +1,83 @@
+version: "3.3"
+
+networks:
+  frontend:
+    driver: ${NETWORKS_DRIVER}
+  backend:
+    driver: ${NETWORKS_DRIVER}
+
+volumes:
+  mysql:
+    driver: ${VOLUMES_DRIVER}
+
+services:
+  ### MySQL ################################################
+  mysql:
+    restart: unless-stopped
+    build:
+      context: ./mysql
+    image: "jabarcoding/mysql:${MYSQL_VERSION}"
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ${DATA_PATH_HOST}/mysql:/var/lib/mysql
+      - ${MYSQL_ENTRYPOINT_INITDB}:/docker-entrypoint-initdb.d
+    ports:
+      - "${MYSQL_PORT}:3306"
+    networks:
+      - backend
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+      
+  ### PHP FPM ####################################################
+  php-fpm:
+    restart: unless-stopped
+    build:
+      context: ./php-fpm
+    volumes:
+        - ./php-fpm/php.ini:/usr/local/etc/php/php.ini
+        - ../:/var/www
+        - ./php-fpm/www.conf:/usr/local/etc/php-fpm.d/www.conf
+        - ./php-fpm/php-fpm.conf:/usr/local/etc/php-fpm.conf
+    extra_hosts:
+      - "dockerhost:${DOCKER_HOST_IP}"
+    ports:
+      - "9000:9000"
+    networks:
+      - backend
+      - frontend
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+  ### NGINX ####################################################
+  nginx:
+    container_name: nginx
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+      args:
+        - http_proxy
+        - https_proxy
+        - no_proxy
+    volumes:
+      - ./nginx/sites:/etc/nginx/sites-available
+      - ../:/var/www
+    ports:
+      - "80:80"
+      - "8000:8000"
+      - "8001:8001"
+    depends_on:
+      - php-fpm
+    networks:
+      - frontend
+      - backend
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    links:
+      - php-fpm
